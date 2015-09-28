@@ -7,3 +7,4 @@ db_username: nephology
 db_password: 
 db_type: mysql
 db_host: localhost
+discovery: enable

@@ -1,3 +1,5 @@
+USE `nephology`;
+
 --
 -- Table structure for table `caste`
 --
