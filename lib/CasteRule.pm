@@ -38,12 +38,7 @@ __PACKAGE__->meta->setup
 			type     => 'varchar',
 			length   => '200',
 			not_null => 1,
-		},
-		type_id => {
-			type     => 'int',
-			length   => 11,
-			not_null => 1,
-		},
+		}
 	],
 	relationships => [
 		caste => {

@@ -1,0 +1,90 @@
+#!/bin/bash
+
+failed()
+{
+  sleep 2 # Wait for the kernel to stop whining
+  echo "Hrm, that didn't work.  Calling for help."
+  if [ -e /dev/ipmi0 ]; then sudo ipmitool chassis identify force; fi
+  echo "OS Install failed: ${1}"
+  while [ 1 ]; do sleep 10; done
+  exit 1;
+}
+
+mkdir /target
+mount /dev/sda1 /target -t xfs
+mkdir /target/var /target/tmp /target/var/tmp
+mount /dev/sda5 /target/tmp -t xfs
+mount /dev/sda6 /target/var/tmp -t xfs
+mount /dev/sda7 /target/var -t xfs
+
+cat > /etc/resolv.conf <<EOF
+nameserver 8.8.8.8
+nameserver 8.8.4.4
+EOF
+
+echo "Starting debootstrap"
+INCLUDE_PACKAGES="openssh-server,linux-image-generic,xfsprogs,wget,ifenslave,curl,grub-pc"
+sudo debootstrap --include=$INCLUDE_PACKAGES --arch=amd64 trusty /target http://<%= $srv_addr %>:3142/<%= $mirror_addr %>/ubuntu/ || failed "Unable to debootstrap"
+
+mount -o bind /proc /target/proc
+mount -o bind /dev /target/dev
+mount -o bind /sys /target/sys
+mount -o bind /dev/pts /target/dev/pts
+
+# Add fstab
+cat > /target/etc/fstab <<EOF
+# /etc/fstab: static file system information.
+#
+# Use 'blkid -o value -s UUID' to print the universally unique identifier
+# for a device; this may be used with UUID= as a more robust way to name
+# devices that works even if disks are added and removed. See fstab(5).
+#
+# <file system> <mount point>   <type>  <options>                               <dump>  <pass>
+proc            /proc           proc    nodev,noexec,nosuid                     0       0
+/dev/sda1       /               xfs     defaults,noatime                        0       1
+/dev/sda2       swap            swap    defaults                                0       0
+/dev/sda5       /tmp            xfs     defaults,noatime,nodev,nosuid,noexec    0       1
+/dev/sda6       /var/tmp        xfs     defaults,noatime,nodev,nosuid           0       1
+/dev/sda7       /var        xfs     defaults,noatime,nodev,nosuid           0       1
+EOF
+
+# Set the hostname
+echo "Setup hostname and DNS..."
+#echo <%= $db_node_info->{'hostname'} %> > /target/etc/hostname
+if [ -L /target/etc/resolv.conf ]; then rm /target/etc/resolv.conf; fi
+printf "domain <%= $db_node_info->{'domain'} %>\nsearch <%= $db_node_info->{'domain'} %>\nnameserver 8.8.8.8\nnameserver 8.8.4.4\n" > /target/etc/resolv.conf            
+printf "<%= $db_node_info->{'primary_ip'} %> <%= $db_node_info->{'hostname'} %>.<%= $db_node_info->{'domain'} %> <%= $db_node_info->{'hostname'} %>\n" >> /target/etc/hosts
+echo "Done!"
+
+# Setup Ubuntu repos
+echo "Installing sources.list"
+cat > /target/etc/apt/sources.list <<EOF
+deb http://<%= $mirror_addr %>/ubuntu trusty main universe restricted
+EOF
+
+# temporary, install.sh removes
+cat > /target/etc/apt/apt.conf.d/99proxy.conf <<EOF
+Acquire::http::Proxy "http://<%= $srv_addr %>:3142/";
+EOF
+
+cat > /target/etc/network/interfaces <<EOF
+auto eth0
+iface eth0 inet dhcp
+EOF
+
+cat > /target/tmp/install.sh <<EOF
+hostname <%= $db_node_info->{'hostname'} %>
+export DEBIAN_FRONTEND=noninteractive
+apt-get update
+apt-get -fy upgrade
+grep -v rootfs /proc/mounts > /etc/mtab
+sudo locale-gen en_US.UTF-8
+update-grub
+grub-install /dev/sda
+EOF
+
+echo "running install.sh"
+chroot /target /bin/bash /tmp/install.sh
+
+# remove apt proxy
+rm /target/etc/apt/apt.conf.d/99proxy.conf

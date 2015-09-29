@@ -51,54 +51,18 @@ sub set_rule {
 	);
 	my $CasteRule = @$MapCasteRules[0]->caste_rule;
 	if (ref $CasteRule) {
-		if ($CasteRule->type_id == 1 or $CasteRule->type_id == 4) {
-			# Client script or client root script
-			# If there is a template, render it.  Otherwise, redirect to URL
-			if ($CasteRule->template) {
-				$self->stash("db_rule_info" => $CasteRule);
-				$self->stash("db_node_info" => $Node);
-				return $self->render(
-					template => $CasteRule->template,
-					format   => 'txt'
-				);
-			} else {
-				$self->redirect_to("http://" . $Config->{'server_addr'} . $CasteRule->url);
-			}
-		} elsif ($CasteRule->type_id == 3) {
-			unless ($CasteRule->template) {
-				return $self->render(
-					text   => "Rule [$rule] for [$boot_mac] template not specified",
-					status => 404
-				);
-			}
-
-			my $tmp = File::Temp->new();
-			my $tmp_fn = $tmp->filename;
-			my $mt = Mojo::Template->new();
-			if (! -f "templates/" . $CasteRule->template) {
-				return $self->render(
-					text   => "Rule [$rule] for [$boot_mac] template not found",
-					status => 404
-				);
-			}
-
-			my $data = $mt->render(
-					'templates/' . $CasteRule->template, $Node, $CasteRule
-			);
-			return $self->render(text => $data);
-		} elsif ($CasteRule->type_id == 2) {
-			$Node->status_id($CasteRule->template);
-			$Node->save() ||
-				return $self->render(
-					text   => "Unable to update node [$boot_mac]",
-					status => 500
-				);
+		if ($CasteRule->template) {
+            $self->stash("db_rule_info" => $CasteRule);
+            $self->stash("db_node_info" => $Node);
 			return $self->render(
-				text => "Reboot rule [$rule] for [$boot_mac] success!"
+				template => $CasteRule->template,
+				format   => 'txt'
 			);
+		} elsif ($CasteRule->url) {
+			$self->redirect_to("http://" . $Config->{'server_addr'} . $CasteRule->url);
 		} else {
 			return $self->render(
-				text   => "OMGWTFBBQ",
+				text   => "No template or url defined",
 				status => 500
 			);
 		}
@@ -166,7 +130,7 @@ sub install_machine {
 		sort_by => 't1.priority, t1.caste_rule_id'
 	);
 
-	my @columns = qw(id description url template type_id);
+	my @columns = qw(id description url template);
 	my @rule_list;
 
 	for my $MapCasteRule (@$MapCasteRules) {	
@@ -213,7 +177,7 @@ sub discovery {
 		ipmi_user => '',
 		ipmi_password => '',
 		caste_id => '0',
-		status_id => '0',
+		status_id => '1',
 		domain => '',
 		primary_ip => '',
 		hostname => '',
